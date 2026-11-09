@@ -77,7 +77,7 @@ function redeemCoupon(
     return {
       ok: false,
       error:
-        "This coupon can only be redeemed from the same country as the purchaser",
+        "This coupon can only be redeemed from the same country as the buyer",
     };
   }
 
@@ -269,7 +269,7 @@ export default function Redeem({
               <p className="mt-2 text-sm text-muted-foreground">
                 This coupon can only be redeemed from the same country as the
                 person who purchased it. Your location doesn&apos;t match the
-                purchaser&apos;s country.
+                buyer&apos;s country.
               </p>
             </div>
           ) : (
