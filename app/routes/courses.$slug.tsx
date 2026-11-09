@@ -367,9 +367,9 @@ function rateCourse(userId: number, courseId: number, rating: number) {
     .get();
 }
 
-const CANCEL_WINDOW_DAYS = 14;
-const CANCEL_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
-const CANCEL_COMPLETION_LIMIT = 0.5;
+const REFUND_WINDOW_DAYS = 14;
+const REFUND_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
+const REFUND_COMPLETION_LIMIT = 0.5;
 
 function getPurchaseForCourse(userId: number, courseId: number) {
   return db
@@ -441,10 +441,10 @@ function asDayString(when: Date) {
 }
 
 /**
- * What the learner is offered if they want their money back, or null if this
- * purchase cannot be cancelled.
+ * What the student is offered if they want their money back, or null if this
+ * purchase cannot be refunded.
  */
-function getCancellationOffer(
+function getRefundEligibility(
   userId: number,
   course: { id: number; price: number }
 ) {
@@ -455,7 +455,7 @@ function getCancellationOffer(
 
   const purchasedDay = asDayString(new Date(purchase.createdAt));
   const windowEnd = new Date(purchase.createdAt);
-  windowEnd.setDate(windowEnd.getDate() + CANCEL_WINDOW_DAYS);
+  windowEnd.setDate(windowEnd.getDate() + REFUND_WINDOW_DAYS);
   const lastDayInWindow = asDayString(windowEnd);
   const todayDay = asDayString(new Date());
   const isWithinWindow =
@@ -467,12 +467,12 @@ function getCancellationOffer(
 
   if (lessonIds.length > 0) {
     const completedCount = getCompletedLessonCount(userId, lessonIds);
-    if (completedCount / lessonIds.length >= CANCEL_COMPLETION_LIMIT) {
+    if (completedCount / lessonIds.length >= REFUND_COMPLETION_LIMIT) {
       return null;
     }
   }
 
-  if (getSecondsWatched(userId, lessonIds) >= CANCEL_WATCH_LIMIT_SECONDS) {
+  if (getSecondsWatched(userId, lessonIds) >= REFUND_WATCH_LIMIT_SECONDS) {
     return null;
   }
 
@@ -526,13 +526,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let progress = 0;
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
-  let cancellation: { amount: number; lastDayInWindow: string } | null = null;
+  let refundEligibility: { amount: number; lastDayInWindow: string } | null =
+    null;
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
 
     if (enrolled) {
-      cancellation = getCancellationOffer(currentUserId, {
+      refundEligibility = getRefundEligibility(currentUserId, {
         id: course.id,
         price: courseWithDetails.price,
       });
@@ -579,7 +580,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     tierInfo,
     ratingSummary,
     userRating,
-    cancellation,
+    refundEligibility,
   };
 }
 
@@ -680,7 +681,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     tierInfo,
     ratingSummary,
     userRating,
-    cancellation,
+    refundEligibility,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -916,10 +917,10 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                     </Button>
                   </Link>
                   <RateCourse userRating={userRating} />
-                  {cancellation && (
-                    <CancelPurchase
+                  {refundEligibility && (
+                    <RequestRefund
                       slug={course.slug}
-                      amount={cancellation.amount}
+                      amount={refundEligibility.amount}
                     />
                   )}
                 </>
@@ -993,7 +994,7 @@ function RateCourse({ userRating }: { userRating: number | null }) {
   );
 }
 
-function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
+function RequestRefund({ slug, amount }: { slug: string; amount: number }) {
   const fetcher = useFetcher<{ errors?: Record<string, string> }>();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const isSubmitting = fetcher.state !== "idle";
@@ -1014,7 +1015,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
           className="w-full text-muted-foreground"
           onClick={() => setIsFormOpen(true)}
         >
-          Cancel my purchase
+          Request a refund
         </Button>
       </div>
     );
@@ -1022,10 +1023,10 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
 
   return (
     <div className="border-t pt-4">
-      <p className="mb-2 text-sm font-medium">Cancel my purchase</p>
+      <p className="mb-2 text-sm font-medium">Request a refund</p>
       <p className="mb-3 text-xs text-muted-foreground">
-        We will send {formatPrice(amount)} back to the card you paid with, once
-        someone has read your note.
+        If we approve your refund, we will send {formatPrice(amount)} back to the
+        card you paid with and your access to this course will end.
       </p>
       <fetcher.Form
         method="post"
@@ -1040,7 +1041,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
         />
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={isSubmitting}>
-            {isSubmitting ? "Sending..." : "Cancel my purchase"}
+            {isSubmitting ? "Sending..." : "Request a refund"}
           </Button>
           <Button
             type="button"
@@ -1048,7 +1049,7 @@ function CancelPurchase({ slug, amount }: { slug: string; amount: number }) {
             size="sm"
             onClick={() => setIsFormOpen(false)}
           >
-            Keep it
+            Keep my course
           </Button>
         </div>
       </fetcher.Form>
